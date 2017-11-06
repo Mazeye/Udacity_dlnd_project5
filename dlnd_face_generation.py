@@ -54,10 +54,10 @@ pyplot.imshow(helper.images_square_grid(mnist_images, 'L'), cmap='gray')
 # ### CelebA
 # The [CelebFaces Attributes Dataset (CelebA)](http://mmlab.ie.cuhk.edu.hk/projects/CelebA.html) dataset contains over 200,000 celebrity images with annotations.  Since you're going to be generating faces, you won't need the annotations.  You can view the first number of examples by changing `show_n_images`.
 
-# In[69]:
+# In[3]:
 
 
-show_n_images = 4
+show_n_images = 9
 
 """
 DON'T MODIFY ANYTHING IN THIS CELL
@@ -111,7 +111,7 @@ else:
 # 
 # Return the placeholders in the following the tuple (tensor of real input images, tensor of z data)
 
-# In[51]:
+# In[5]:
 
 
 import problem_unittests as tests
@@ -128,7 +128,7 @@ def model_inputs(image_width, image_height, image_channels, z_dim):
     # TODO: Implement Function
     real_input_images = tf.placeholder(tf.float32,(None,image_width,image_height,image_channels),name="real_input_images")
     z_data = tf.placeholder(tf.float32,(None,z_dim),name="z_data")
-    learning_rate = tf.placeholder(tf.float32,name="lr")
+    learning_rate = tf.placeholder(tf.float32,name="lr",shape=())
     return (real_input_images,z_data,learning_rate)
 
 
@@ -141,7 +141,7 @@ tests.test_model_inputs(model_inputs)
 # ### Discriminator
 # Implement `discriminator` to create a discriminator neural network that discriminates on `images`.  This function should be able to reuse the variables in the neural network.  Use [`tf.variable_scope`](https://www.tensorflow.org/api_docs/python/tf/variable_scope) with a scope name of "discriminator" to allow the variables to be reused.  The function should return a tuple of (tensor output of the discriminator, tensor logits of the discriminator).
 
-# In[79]:
+# In[29]:
 
 
 def discriminator(images, reuse=False,alpha=0.2,dropout=0.5):
@@ -153,18 +153,22 @@ def discriminator(images, reuse=False,alpha=0.2,dropout=0.5):
     """
     # TODO: Implement Function
     with tf.variable_scope('discriminator', reuse=reuse):
-        cov1 = tf.layers.conv2d(images, 64, 5, strides=2, padding='same')
+        cov1 = tf.layers.conv2d(images, 128,5, strides=2, padding='same',kernel_initializer=tf.contrib.layers.xavier_initializer())
         cov1 = tf.maximum(alpha*cov1,cov1)
 
-        cov2 = tf.layers.conv2d(cov1,128,5,strides=2, padding='same')
+        cov2 = tf.layers.conv2d(cov1,256,4,strides=2, padding='same',kernel_initializer=tf.contrib.layers.xavier_initializer())
         cov2 = tf.layers.batch_normalization(cov2, training=True)
         cov2 = tf.maximum(alpha*cov2,cov2)
 
-        cov3 = tf.layers.conv2d(cov2,256,5,strides=2, padding='same')
+        cov3 = tf.layers.conv2d(cov2,512,3,strides=2, padding='same',kernel_initializer=tf.contrib.layers.xavier_initializer())
         cov3 = tf.layers.batch_normalization(cov3, training=True)
         cov3 = tf.maximum(alpha*cov3,cov3)
+        
+        cov4 = tf.layers.conv2d(cov3,1024,2,strides=2, padding='same',kernel_initializer=tf.contrib.layers.xavier_initializer())
+        cov4 = tf.layers.batch_normalization(cov4, training=True)
+        cov4 = tf.maximum(alpha*cov4,cov4)
 
-        flat = tf.reshape(cov3, (-1, 4*4*256))
+        flat = tf.reshape(cov4, (-1, 2*2*1024))
         dropout_layer = tf.layers.dropout(inputs=flat, rate=dropout)
         logits = tf.layers.dense(dropout_layer, 1)
         outputs = tf.sigmoid(logits)    
@@ -180,7 +184,7 @@ tests.test_discriminator(discriminator, tf)
 # ### Generator
 # Implement `generator` to generate an image using `z`. This function should be able to reuse the variables in the neural network.  Use [`tf.variable_scope`](https://www.tensorflow.org/api_docs/python/tf/variable_scope) with a scope name of "generator" to allow the variables to be reused. The function should return the generated 28 x 28 x `out_channel_dim` images.
 
-# In[80]:
+# In[30]:
 
 
 def generator(z, out_channel_dim, is_train=True, alpha=0.2):
@@ -193,17 +197,20 @@ def generator(z, out_channel_dim, is_train=True, alpha=0.2):
     """
     # TODO: Implement Function
     with tf.variable_scope('generator', reuse= not is_train):
-        f_c = tf.layers.dense(z,7*7*1024)
-        f_c =tf.reshape(f_c,(-1,7,7,1024))
+        f_c = tf.layers.dense(z,7*7*256)
+        f_c =tf.reshape(f_c,(-1,7,7,256))
         f_c = tf.layers.batch_normalization(f_c, training=is_train)
         f_c = tf.maximum(alpha * f_c, f_c)
         
-        cov1 = tf.layers.conv2d_transpose(f_c,512,4,strides=2, padding='same')
+        cov1 = tf.layers.conv2d_transpose(f_c,128,5,strides=2, padding='same')
         cov1 = tf.layers.batch_normalization(cov1, training=True)
         cov1 = tf.maximum(alpha*cov1,cov1)
 
+        cov2 = tf.layers.conv2d_transpose(cov1,64,4,strides=2, padding='same')
+        cov2 = tf.layers.batch_normalization(cov2, training=True)
+        cov2 = tf.maximum(alpha*cov2,cov2)
         
-        logits = tf.layers.conv2d_transpose(cov1,out_channel_dim,4,strides=2, padding='same')
+        logits = tf.layers.conv2d_transpose(cov2,out_channel_dim,3,strides=1, padding='same')
         outputs = tf.tanh(logits)
         return outputs
 
@@ -219,7 +226,7 @@ tests.test_generator(generator, tf)
 # - `discriminator(images, reuse=False)`
 # - `generator(z, out_channel_dim, is_train=True)`
 
-# In[81]:
+# In[31]:
 
 
 def model_loss(input_real, input_z, out_channel_dim,alpha=0.2, dropout=0.5):
@@ -251,7 +258,7 @@ tests.test_model_loss(model_loss)
 # ### Optimization
 # Implement `model_opt` to create the optimization operations for the GANs. Use [`tf.trainable_variables`](https://www.tensorflow.org/api_docs/python/tf/trainable_variables) to get all the trainable variables.  Filter the variables with names that are in the discriminator and generator scope names.  The function should return a tuple of (discriminator training operation, generator training operation).
 
-# In[82]:
+# In[32]:
 
 
 def model_opt(d_loss, g_loss, learning_rate, beta1):
@@ -285,7 +292,7 @@ tests.test_model_opt(model_opt, tf)
 # ### Show Output
 # Use this function to show the current output of the generator during training. It will help you determine how well the GANs is training.
 
-# In[83]:
+# In[33]:
 
 
 """
@@ -323,7 +330,7 @@ def show_generator_output(sess, n_images, input_z, out_channel_dim, image_mode):
 # 
 # Use the `show_generator_output` to show `generator` output while you train. Running `show_generator_output` for every batch will drastically increase training time and increase the size of the notebook.  It's recommended to print the `generator` output every 100 batches.
 
-# In[87]:
+# In[38]:
 
 
 def train(epoch_count, batch_size, z_dim, learning_rate, beta1, get_batches, data_shape, data_image_mode):
@@ -341,6 +348,7 @@ def train(epoch_count, batch_size, z_dim, learning_rate, beta1, get_batches, dat
     # TODO: Build Model
     step = 0
     show_step = 100
+    pstep = 20
     images_to_show = 9
     _,img_width,img_height,img_channels = data_shape
     
@@ -354,31 +362,35 @@ def train(epoch_count, batch_size, z_dim, learning_rate, beta1, get_batches, dat
             for batch_images in get_batches(batch_size):
                 # TODO: Train Model
                 step = step + 1
-                z_batch = np.random.uniform(-0.5, 0.5, size=(batch_size, z_dim))
+                batch_images=batch_images*2
+                z_batch = np.random.uniform(-1, 1, size=(batch_size, z_dim))
                 sess.run(d_optimizer, feed_dict={real_input_images: batch_images, z_data: z_batch, lr: learning_rate})
-                sess.run(g_optimizer, feed_dict={z_data: z_batch, real_input_images: batch_images, lr: learning_rate}) 
+                #生成器运行两次以赶上辨识器速度
+                sess.run(g_optimizer, feed_dict={z_data: z_batch, real_input_images: batch_images, lr: learning_rate})
+                sess.run(g_optimizer, feed_dict={z_data: z_batch, real_input_images: batch_images, lr: learning_rate})
                 
-                if step % show_step == 0:
-                    show_generator_output(sess, images_to_show, z_data, img_channels, data_image_mode)
+                if step % pstep == 0:
                     train_loss_d = d_loss.eval({z_data: z_batch, real_input_images: batch_images})
                     train_loss_g = g_loss.eval({z_data: z_batch})
                     print("Step: {}:".format(step),
                           "Epoch {}/{}...".format(epoch_i+1, epoch_count),
                           "Discriminator Loss: {:.4f}...".format(train_loss_d),
                           "Generator Loss: {:.4f}".format(train_loss_g))
+                if step % show_step == 0:
+                    show_generator_output(sess, images_to_show, z_data, img_channels, data_image_mode)
     print("Training Finished")
 
 
 # ### MNIST
 # Test your GANs architecture on MNIST.  After 2 epochs, the GANs should be able to generate images that look like handwritten digits.  Make sure the loss of the generator is lower than the loss of the discriminator or close to 0.
 
-# In[89]:
+# In[28]:
 
 
-batch_size = 128
-z_dim = 256
+batch_size = 64
+z_dim = 128
 learning_rate = 0.0003
-beta1 = 0.3
+beta1 = 0.5
 
 
 """
@@ -395,12 +407,12 @@ with tf.Graph().as_default():
 # ### CelebA
 # Run your GANs on CelebA.  It will take around 20 minutes on the average GPU to run one epoch.  You can run the whole epoch or stop when it starts to generate realistic faces.
 
-# In[91]:
+# In[39]:
 
 
-batch_size = 128
-z_dim = 256
-learning_rate = 0.0003
+batch_size = 32
+z_dim = 84
+learning_rate = 0.0001
 beta1 = 0.3
 
 
